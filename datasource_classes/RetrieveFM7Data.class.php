@@ -125,7 +125,11 @@ class RetrieveFM7Data extends RetrieveFMXML {
         } else {
             $FMFile = $this->fmDataFile;
         }
-        $this->dataURL = "{$this->FX->urlScheme}://{$this->FX->userPass}{$this->FX->dataServer}{$this->FX->dataPortSuffix}/fmi/xml/{$FMFile}"; // First add the server info to the URL...
+        $this->dataURL = "{$this->FX->urlScheme}://";
+        if (!$this->FX->useCURL) {
+            $this->dataURL .= "{$this->FX->userPass}";
+        }
+        $this->dataURL .= "{$this->FX->dataServer}{$this->FX->dataPortSuffix}/fmi/xml/{$FMFile}"; // First add the server info to the URL...
         $this->dataURLParams = $this->AssembleCurrentQuery($layRequest, $skipRequest, $currentSort, $currentSearch, $action, 7);
         $this->dataURL .= '?' . $this->dataURLParams;
 
