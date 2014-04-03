@@ -62,7 +62,7 @@ class RetrieveFM7Data extends RetrieveFMXML {
         return $currentSearch;
     }
 
-    function doQuery ($action) {
+    function doQuery ($action, $repeat1 = false) {
         // if section added by Nick Salonen for findquery
         if ($action == '-findquery')
         {
@@ -165,25 +165,35 @@ This function is particularly written for huge queries of data that are less lik
             if ($this->FX->useCURL && defined("CURLOPT_TIMEVALUE")) {
                 $curlHandle = curl_init(str_replace('?' . $this->dataURLParams, '', $this->dataURL));
                 curl_setopt($curlHandle, CURLOPT_PORT, $this->FX->dataPort);
-                curl_setopt($curlHandle, CURLOPT_HEADER, 0);
+                curl_setopt($curlHandle, CURLOPT_HEADER, 1);
                 curl_setopt($curlHandle, CURLOPT_POST, 1);
+                curl_setopt($curlHandle, CURLOPT_RETURNTRANSFER, 1);
                 if ($this->FX->verifyPeer == false) curl_setopt($curlHandle, CURLOPT_SSL_VERIFYPEER,false);
                 curl_setopt($curlHandle, CURLOPT_POSTFIELDS, $this->dataURLParams);
                 if ($this->FX->DBPassword != '' || $this->FX->DBUser != 'FX') {
                     curl_setopt($curlHandle, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
                     curl_setopt($curlHandle, CURLOPT_USERPWD, $this->FX->DBUser . ':' . $this->FX->DBPassword);
                 }
-                ob_start();
-                if (! curl_exec($curlHandle)) {
+                if (! $data = curl_exec($curlHandle)) {
                     $this->FX->lastDebugMessage .= "<p>Unable to connect to FileMaker.  Use the DEBUG constant and try connecting with the resulting URL manually.<br />\n";
                     $this->FX->lastDebugMessage .= "You should also double check the user name and password used, the server address, and WPE configuration.</p>\n";
                     return new FX_Error("cURL could not retrieve Post data in RetrieveFM7Data(). A bad URL is the most likely reason.");
                 }
+
+                $header_size = curl_getinfo($curlHandle,CURLINFO_HEADER_SIZE);
+                $response_header = substr($data, 0, $header_size);
+                $data = substr( $data, $header_size );
+
                 curl_close($curlHandle);
-                $data = trim(ob_get_contents());
-                ob_end_clean();
+
+
+                if (strlen($data) == 0) {
+                    @error_log('body was zero length. headers: '. var_export($response_header, true));
+                }
                 if (substr($data, -1) != '>') {
-                    $data = substr($data, 0, -1);
+                    // $data = substr($data, 0, -1);
+                    @error_log('last character was not a greater than...');
+                    $data = trim($data);
                 }
             } else {
                 $dataDelimiter = "\r\n";
@@ -267,9 +277,18 @@ This function is particularly written for huge queries of data that are less lik
             $xmlParseResult = xml_parse($xml_parser, $this->ConvertSurrogatePair( $data ), true);
             if (! $xmlParseResult) {
 /* ==============End of the addition */
+                $error_line_xml = xml_get_current_line_number($xml_parser);
+                $error_code_xml = xml_get_error_code($xml_parser);
+
+                if ($repeat1 == false && $error_line_xml == 1 && strlen($data) == 0) {
+                    // repeat the action... scary...
+                    @error_log('Repeated Request due to timeout on ' . $this->dataURLParams);
+                    xml_parser_free($xml_parser);
+                    return $this->doQuery($action, true);
+                }
                 $theMessage = sprintf("ExecuteQuery XML error: %s at line %d",
-                    xml_error_string(xml_get_error_code($xml_parser)),
-                    xml_get_current_line_number($xml_parser));
+                    xml_error_string($error_code_xml),
+                    $error_line_xml);
                 xml_parser_free($xml_parser);
                 $this->FX->lastDebugMessage .= "<p>Unable to parse FileMaker XML.  Use the DEBUG constant and try connecting with the resulting URL manually.<br />\n";
                 $this->FX->lastDebugMessage .= "You should also double check the <strong>user name</strong> and <strong>password</strong> used, the <strong>server address and port</strong>, and <strong>WPE configuration</strong>.<br />\n";
